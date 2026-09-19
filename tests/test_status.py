@@ -46,6 +46,17 @@ class StatusTest(unittest.TestCase):
         self.assertIn('Usage unavailable', output)
         self.assertNotIn('0% used', output)
 
+    def test_dormant_window_and_display_only_capacity(self):
+        snapshot = self.snapshot()
+        account = snapshot['accounts']['work']
+        account.update(capacity=20, login_source='Imported login')
+        account['windows'][0].update(used=0, reset=None)
+        output = describe(snapshot, now=1000)
+        self.assertIn('reset not started', output)
+        self.assertIn('plan capacity 20× (display only)', output)
+        self.assertNotIn('Usage unavailable', output)
+        self.assertIn('current allowance unknown', describe(snapshot, now=1200))
+
     def test_metadata_excludes_credentials_and_checks_actual_launcher(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'CXGEAR_HOME': tmp}), patch('cxgear.accounts.credentials', return_value={'chatgptPlanType': 'pro', 'accessToken': 'DO-NOT-EXPOSE', 'chatgptAccountId': 'PRIVATE-ID'}):
             store.write(store.root()/'config.json', {'accounts': {'work': {'label': 'Work'}}})

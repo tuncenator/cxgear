@@ -80,11 +80,14 @@ def describe(snapshot, color=False, now=None):
             title = f"\033[1m{title}\033[0m"
         lines += ["", title]
         if usage.get("login_source"):
-            lines.append(f"  {usage['login_source']} · capacity weight {usage.get('capacity', 1):g}")
+            lines.append(f"  {usage['login_source']} · plan capacity {usage.get('capacity', 1):g}× (display only)")
         windows = sorted(usage.get("windows", []), key=lambda w: w["minutes"], reverse=True)
         stale = now-usage.get("at", 0) > 180 or bool(usage.get("error"))
         for w in windows:
             title = "Weekly" if w["minutes"] == 10080 else f"{w['minutes']/60:g}h window"
+            if w["reset"] is None:
+                lines.append(f"  {title}: {w['used']:g}% used · reset not started" if not stale else f"  {title}: reading stale; current allowance unknown")
+                continue
             expired = w["reset"] <= now
             elapsed = max(0, min(100, 100*(1-(w["reset"]-now)/(w["minutes"]*60)))) if w["minutes"] == 10080 else None
             if expired or stale:

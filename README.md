@@ -105,39 +105,44 @@ reach connected sessions in roughly two seconds, outside network delays.
 
 ## Selection policy
 
-Each account's native Codex quota is polled about once a minute. cxgear considers
-both the short window and weekly window when present:
+Each account's native Codex quota is polled about once a minute. Automatic
+selection follows ccgear's percentage/reset policy:
 
-* Switch away at 90% short-window usage or 96% weekly usage when another account
-  has room. New targets must be below 80% in their short window.
-* Prefer accounts with more weekly allowance left relative to time until reset:
-  `remaining percentage × relative capacity / hours until reset`.
-* Give an account resetting within 24 hours priority when the current account
-  has at least three times as long until its reset.
-* Avoid unnecessary switching with a one-minute cooldown and a small difference
-  threshold. An exhausted account can switch immediately.
-* Treat missing, expired, failed, or stale quota observations as unknown.
-  Never display unknown allowance as a fresh 0% reading.
-* A manual pin takes precedence, even if that account is capped.
+* Prefer the higher `remaining weekly percentage / hours until reset`.
+  Plan multipliers do not weight this score. With 41% remaining and 121 hours
+  on work versus 100% and 168 hours on personal, personal wins.
+* Switch away at 90% short-window usage or 96% weekly usage. Normal pacing
+  switches require the target's short-window usage below 80% and weekly usage
+  below 96%. Escaping a short cap permits a target below 90%; escaping a
+  weekly cap permits a short-capped target with weekly allowance remaining.
+* Prioritize a target resetting within 24 hours when the current account has
+  at least three times as long until reset, subject to normal target guards.
+* Suppress small pressure differences using ccgear's deadband:
+  `2 / max(shorter remaining window in hours, 1)`. There is no time cooldown.
+  Pressure calculations floor time until reset at one minute.
+* When both accounts are short-capped, drain the first registered account to
+  98% first. When both are weekly-capped, drain it to 99% first. This account
+  occupies ccgear's Max role. A fallback after that requires explicit
+  extra-usage opt-in; cxgear doesn't assume ccgear's Team billing setup.
+* Prefer an explicitly reported dormant account (0% with no reset yet).
+  Missing, expired, failed, or stale observations remain unknown, not dormant.
+  If the active account is unavailable, use a healthy account; if all are
+  unavailable, hold. A manual pin takes precedence.
 
-Relative capacity defaults to 1 for every account. Set weights to reflect your
-plans. For a work account on Pro 20x and a personal account on Pro 5x:
+The threshold ordering, emergency exceptions, perishable priority, dormant
+handling, and deadband match ccgear for two accounts with valid observations.
+For additional accounts, cxgear ranks eligible candidates by the same score.
+Native quota freshness checks and explicit extra-usage opt-in are retained.
+
+Plan capacity is optional **display metadata only**. For example:
 
 ```sh
 cxgear configure work --capacity 20
 cxgear configure personal --capacity 5
 ```
 
-OpenAI lists both multipliers against the same Plus baseline in its
-[Codex pricing](https://learn.chatgpt.com/docs/pricing), giving these tiers a
-4:1 capacity ratio. The selection score multiplies remaining percentage by
-capacity before dividing by hours to reset. For example, 41% of a 20x allowance
-represents more estimated capacity than 100% of a 5x allowance.
-
-These are relative plan weights, not guaranteed token counts or independently
-measured weekly caps. Live quota percentages and resets still govern selection.
-cxgear does not infer a personal/workspace allowance ratio from account names
-or subscription prices.
+These values label the plans in status; they never influence account selection
+and do not represent measured weekly token caps.
 
 Paid extra usage is never a preferred fallback unless you opt it in:
 
@@ -208,7 +213,7 @@ By default, state lives in `~/.local/share/cxgear` (override `CXGEAR_HOME`):
 
 ```text
 accounts/NAME/     Native Codex login homes; imported auth.json may be a symlink
-config.json       Account names, weights, and upstream binary path
+config.json       Account names, plan metadata, and upstream binary path
 state.json        Current account, manual pin, and last switch
 events.jsonl      Numeric usage observations and account decisions
 control.sock      Private broker socket

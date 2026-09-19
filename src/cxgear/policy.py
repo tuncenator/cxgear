@@ -1,4 +1,4 @@
-"""Pure selection policy inspired by ccgear's pressure-balanced weekly drain."""
+"""ccgear percentage/reset selection, adapted to native Codex quota observations."""
 from dataclasses import dataclass
 import math
 
@@ -16,60 +16,109 @@ def window(usage, minutes):
     return None
 
 
-def percent(usage, minutes, now):
-    w = window(usage, minutes)
-    # An expired observation is unknown, not an invented reset to zero.
-    return w["used"] if w and w["reset"] > now else None
+def fresh(usage, now):
+    windows = usage.get("windows", [])
+    return bool(windows) and not usage.get("error") and now-usage.get("at", 0) <= 180 and all(
+        (w["reset"] is None and w["used"] == 0) or
+        (w["reset"] is not None and w["reset"] > now) for w in windows)
 
 
-def available(usage, now, target=False):
-    if usage.get("error") or now - usage.get("at", 0) > 180:
-        return False
-    valid = [w for w in usage.get("windows", []) if w["reset"] > now]
-    if not valid:
-        return False
-    return all(w["used"] < (96 if w["minutes"] >= 10080 else (80 if target else 90)) for w in valid)
+def short_used(usage):
+    return max((w["used"] for w in usage.get("windows", []) if w["minutes"] < 10080), default=0)
+
+
+def weekly_used(usage):
+    w = window(usage, 10080)
+    return w["used"] if w else 0
+
+
+def hours(usage, now):
+    w = window(usage, 10080)
+    return max((w["reset"]-now)/3600, 1/60) if w and w["reset"] is not None else None
+
+
+def pressure(_cfg, usage, now):
+    """ccgear's percentage per hour; plan capacity never changes routing."""
+    w = window(usage, 10080)
+    if not w:
+        return 0  # No weekly observation: no inferred weekly urgency.
+    remaining = hours(usage, now)
+    return (100-w["used"])/remaining if remaining is not None else math.inf
 
 
 def choose(accounts, readings, current, pinned, now, last_switch=0):
+    # Keep last_switch for compatibility with stored state; ccgear has no
+    # time-based cooldown. Its pressure deadband suppresses small changes.
     if pinned:
         return Decision(pinned, "Manually pinned")
-    candidates = [n for n in accounts if available(readings.get(n, {}), now, target=True)]
-    if current in accounts and available(readings.get(current, {}), now) and current not in candidates:
-        candidates.append(current)
-    if not candidates:
-        # Paid extra usage is strictly opt-in, never inferred from account type.
-        extra = [n for n, cfg in accounts.items() if cfg.get("extra_usage") and not readings.get(n, {}).get("error") and now-readings.get(n, {}).get("at", 0) <= 180]
+    known = [n for n in accounts if fresh(readings.get(n, {}), now)]
+    if not known:
+        return Decision(current, "No fresh account observations; holding")
+    score = lambda n: pressure(accounts[n], readings[n], now)
+    short = lambda n: short_used(readings[n])
+    week = lambda n: weekly_used(readings[n])
+    if current not in known:
+        if current is not None:
+            return Decision(max(known, key=score), "Current account unavailable; use a healthy account")
+        ready = [n for n in known if short(n) < 80 and week(n) < 96]
+        extra = [n for n in known if accounts[n].get("extra_usage")]
+        if not ready and not extra:
+            return Decision(None, "No account with available allowance")
+        return Decision(max(ready or extra, key=score), "Initial account selection")
+    if len(known) == 1:
+        return Decision(current, "Other accounts unavailable; holding")
+
+    others = [n for n in known if n != current]
+    # ccgear's first account is Max, which it drains before Team overage.
+    # Registration order supplies that role without using capacity weights.
+    primary = known[0]
+
+    def drained(kind, threshold):
+        used = short if kind == "short window" else week
+        if used(primary) < threshold:
+            return Decision(primary, f"All accounts capped; drain {primary} before extra usage")
+        extra = [n for n in known if accounts[n].get("extra_usage")]
         if extra:
-            return Decision(current if current in extra else extra[0], "Included allowances exhausted; explicitly enabled extra usage")
-        return Decision(current, "No fresh account with available allowance; holding")
-    if current not in candidates:
-        return Decision(max(candidates, key=lambda n: pressure(accounts[n], readings[n], now)), "Current account unavailable or near its limit")
-    if now-last_switch < 60:
-        return Decision(current, "Switch cooldown")
-    current_week = window(readings[current], 10080)
-    if current_week:
-        expiring = [n for n in candidates if n != current and (w := window(readings[n], 10080)) and 0 < w["reset"]-now <= 86400 and current_week["reset"]-now >= 3*(w["reset"]-now)]
-        if expiring:
-            name = max(expiring, key=lambda n: pressure(accounts[n], readings[n], now))
-            return Decision(name, "Use allowance before its earlier weekly reset")
-    best = max(candidates, key=lambda n: pressure(accounts[n], readings[n], now))
+            return Decision(current if current in extra else extra[0], "Included allowances drained; explicitly enabled extra usage")
+        return Decision(current, "Included allowances drained; no extra-usage account enabled")
+
+    # Preserve ccgear's ordering and emergency exceptions to the 80% guard.
+    if all(short(n) >= 90 for n in known):
+        return drained("short window", 98)
+    if short(current) >= 90:
+        escape = [n for n in others if short(n) < 90 and week(n) < 96]
+        if escape:
+            return Decision(max(escape, key=score), "Current short window capped")
+    if week(current) >= 96:
+        escape = [n for n in others if week(n) < 96]
+        if escape:
+            return Decision(max(escape, key=score), "Current weekly allowance capped")
+    if all(week(n) >= 96 for n in known):
+        return drained("weekly allowance", 99)
+
+    current_hours = hours(readings[current], now)
+    expiring = [n for n in others if (h := hours(readings[n], now)) is not None
+                and current_hours is not None and h <= 24 and current_hours >= 3*h
+                and week(n) < 96 and short(n) < 80]
+    if expiring:
+        return Decision(max(expiring, key=score), "Use allowance before its earlier weekly reset")
+
+    if all(math.isinf(score(n)) for n in known):
+        return Decision(current, "All accounts dormant; holding")
+    best = max(known, key=score)
     if best == current:
-        return Decision(current, "Current account has the most allowance to use before reset")
-    old, new = pressure(accounts[current], readings[current], now), pressure(accounts[best], readings[best], now)
-    hours = [max((w["reset"]-now)/3600, 1) for n in (current, best) if (w := window(readings[n], 10080))]
-    deadband = 2/min(hours) if hours else 2
-    if new-old <= deadband:
-        return Decision(current, "Difference too small to justify switching")
-    return Decision(best, "More remaining allowance to use before reset")
-
-
-def pressure(cfg, usage, now):
-    w = window(usage, 10080)
-    if not w or w["reset"] <= now:
-        # Short-window-only accounts can be selected, but lack weekly urgency.
-        return 0
-    return (100-w["used"])*cfg.get("capacity", 1)/max((w["reset"]-now)/3600, 1/60)
+        return Decision(current, "Current account has the highest remaining percentage per hour")
+    old, new = score(current), score(best)
+    if math.isfinite(old) and math.isfinite(new):
+        reset_hours = [hours(readings[n], now) for n in (current, best)]
+        shorter = max(min(h for h in reset_hours if h is not None), 1) if any(h is not None for h in reset_hours) else 1
+        if abs(new-old) < 2/shorter:
+            return Decision(current, "Pressure difference within ccgear's deadband")
+    if week(best) >= 96:
+        return Decision(current, "Preferred account weekly allowance capped; holding")
+    if short(best) >= 80:
+        return Decision(current, "Preferred account short window at or above 80%; holding")
+    return Decision(best, "Higher remaining percentage per hour before reset")
 
 
 def parse_limits(result, now):
@@ -80,6 +129,7 @@ def parse_limits(result, now):
     for key in ("primary", "secondary"):
         w = limit.get(key) or {}
         used, minutes, reset = w.get("usedPercent"), w.get("windowDurationMins"), w.get("resetsAt")
-        if all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (used, minutes, reset)) and 0 <= used <= 100 and minutes > 0 and reset > 0:
+        valid_reset = (reset is None and used == 0) or (isinstance(reset, (int, float)) and not isinstance(reset, bool) and math.isfinite(reset) and reset > 0)
+        if all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (used, minutes)) and 0 <= used <= 100 and minutes > 0 and valid_reset:
             windows.append({"used": used, "minutes": minutes, "reset": reset})
     return {"at": now, "windows": windows}
