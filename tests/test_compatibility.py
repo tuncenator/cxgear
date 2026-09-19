@@ -93,3 +93,28 @@ class CompatibilityTest(unittest.TestCase):
                 install.uninstall()
                 self.assertFalse(executable.is_symlink())
                 self.assertEqual(executable.read_text(), 'native')
+
+    def test_install_repairs_native_replacement_without_losing_backup(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'CXGEAR_HOME': tmp+'/state'}):
+            root = Path(tmp)
+            bin_dir = root/'bin'; bin_dir.mkdir()
+            native_binary = root/'native'; native_binary.write_text('native')
+            target = bin_dir/'codex'; target.symlink_to(native_binary)
+            env = root/'venv/bin'; env.mkdir(parents=True)
+            wrapper = env/'cxgear-codex'; wrapper.write_text('wrapper')
+            with patch('sys.executable', str(env/'python')), patch('cxgear.accounts.binary', return_value=str(native_binary)):
+                install.install(bin_dir)
+                metadata = (store.root()/'install.json').read_text()
+                target.unlink(); target.symlink_to(native_binary)
+                install.install(bin_dir)
+                self.assertEqual(target.resolve(), wrapper)
+                self.assertEqual((store.root()/'install.json').read_text(), metadata)
+                self.assertEqual((bin_dir/'.codex-before-cxgear').resolve(), native_binary)
+                unrelated = root/'unrelated'; unrelated.write_text('leave alone')
+                target.unlink(); target.symlink_to(unrelated)
+                with self.assertRaisesRegex(ValueError, 'unrecognized'):
+                    install.install(bin_dir)
+                self.assertEqual(target.resolve(), unrelated)
+                target.unlink(); target.symlink_to(wrapper)
+                install.uninstall()
+                self.assertEqual(target.resolve(), native_binary)

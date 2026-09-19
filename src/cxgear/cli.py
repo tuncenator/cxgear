@@ -1,6 +1,7 @@
 import argparse
 import json
 import math
+import shlex
 import os
 from pathlib import Path
 import subprocess
@@ -114,9 +115,13 @@ def main():
                 pass
         elif args.command == "install":
             print("Installed " + str(install.install(args.bin_dir)))
+            meta = store.read(store.root()/"install.json")
+            if meta.get("mode") == "path":
+                print("New shells use cxgear automatically. Activate this shell with:")
+                print("  source " + shlex.quote(meta["env"]))
         elif args.command == "uninstall":
             install.uninstall()
-            print("Original Codex launcher restored")
+            print("cxgear launcher removed; native Codex remains available")
         elif args.command == "doctor":
             path = accounts.binary()
             print("Native executable: " + path)

@@ -25,11 +25,13 @@ class StatusTest(unittest.TestCase):
 
     def test_fresh_quota_has_bars_and_remaining_allowance(self):
         output = describe(self.snapshot(), now=1000)
-        self.assertIn('Work (work) · Pro · ACTIVE', output)
+        self.assertIn('Work (work) · Pro · SELECTED', output)
         self.assertIn('59% used · 41% left', output)
         self.assertIn('█', output)
         self.assertIn('Short window: not reported', output)
         self.assertIn('not enabled', output)
+        self.assertIn('native sessions keep their own login', output)
+        self.assertNotIn('ACTIVE', output)
         self.assertNotIn('\033', output)
 
     def test_stale_and_reset_readings_never_show_available_headroom(self):
@@ -65,7 +67,13 @@ class StatusTest(unittest.TestCase):
             wrapper.write_text('wrapper')
             target.symlink_to(wrapper)
             store.write(store.root()/'install.json', {'target': str(target), 'wrapper': str(wrapper)})
-            result = enrich(self.snapshot())
+            with patch('cxgear.status.shutil.which', return_value=str(target)):
+                result = enrich(self.snapshot())
+            self.assertTrue(result['launcher_on_path'])
+            with patch('cxgear.status.shutil.which', return_value='/usr/bin/false'):
+                inactive = enrich(self.snapshot())
+            self.assertFalse(inactive['launcher_on_path'])
+            self.assertIn('reload your shell', describe(inactive, now=1000))
             self.assertTrue(result['launcher_installed'])
             self.assertEqual(result['accounts']['work']['plan'], 'pro')
             self.assertNotIn('DO-NOT-EXPOSE', json.dumps(result))

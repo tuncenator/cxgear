@@ -54,11 +54,25 @@ cxgear install
 codex
 ```
 
-`cxgear install` backs up the existing `~/.local/bin/codex` entry and puts a
-launcher in its place. `cxgear uninstall` restores it. Check `command -v codex`
-if another installation appears earlier on PATH. The upstream binary is kept
-and used directly; its updater-managed path is preserved where available.
+`cxgear install` adds a private launcher at `~/.local/share/cxgear/bin/codex`
+and a marked PATH block to Bash and Zsh startup files. It leaves native Codex's
+`~/.local/bin/codex` under the native installer's control, so updates cannot
+replace cxgear's launcher. The upstream updater-managed executable is used
+directly. Existing installations are migrated and their original native launcher
+is restored from the saved backup.
+
+New shells pick it up automatically. For an already-open shell, run the `source`
+command printed by installation (normally `source ~/.local/share/cxgear/env.sh`).
+`cxgear codex resume` also works immediately without reloading the shell.
+`cxgear uninstall` removes only its launcher and marked startup blocks; it
+preserves other shell settings and any newer native Codex installation.
 No project configuration, hooks, or framework integration is required.
+
+`cxgear status` checks both the installed launcher and command resolution on the
+current PATH. `SELECTED` describes the broker's choice for managed sessions, not
+the login used by every Codex process. Existing native sessions require exit and
+resume through cxgear. The advanced `--bin-dir` install keeps the legacy shim
+behavior at an explicitly chosen location; it does not configure shell PATH.
 
 ## Controls
 

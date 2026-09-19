@@ -2,6 +2,7 @@
 from datetime import datetime
 from pathlib import Path
 import time
+import shutil
 
 from . import accounts, store
 
@@ -22,6 +23,8 @@ def enrich(snapshot):
     meta = store.read(store.root()/"install.json")
     target, wrapper = meta.get("target"), meta.get("wrapper")
     snapshot["launcher_installed"] = bool(target and wrapper and Path(target).is_symlink() and Path(target).resolve() == Path(wrapper).resolve())
+    resolved = shutil.which("codex")
+    snapshot["launcher_on_path"] = bool(snapshot["launcher_installed"] and resolved and Path(resolved).resolve() == Path(wrapper).resolve())
     return snapshot
 
 
@@ -67,7 +70,12 @@ def describe(snapshot, color=False, now=None):
     now = time.time() if now is None else now
     pinned = snapshot.get("pinned")
     mode = "pinned to " + pinned if pinned else "automatic"
-    lines = [f"cxgear · {mode}", "Codex launcher: " + ("enabled" if snapshot.get("launcher_installed") else "not enabled — run cxgear install")]
+    installed = snapshot.get("launcher_installed")
+    launcher = ("enabled" if snapshot.get("launcher_on_path", installed) else
+                "installed; reload your shell or use cxgear codex" if installed else
+                "not enabled — run cxgear install")
+    lines = [f"cxgear · {mode}", "Codex launcher: " + launcher]
+    lines.append("Selected account applies to cxgear-managed sessions; native sessions keep their own login.")
     has_pace_bar = False
     for name, usage in snapshot.get("accounts", {}).items():
         active = snapshot.get("active") == name
@@ -75,7 +83,7 @@ def describe(snapshot, color=False, now=None):
         if label != name:
             label += f" ({name})"
         plan = {"pro": "Pro", "prolite": "Pro (prolite)", "business": "Business", "team": "Team"}.get(usage.get("plan"), usage.get("plan") or "plan unavailable")
-        title = f"{'●' if active else '○'} {label} · {plan}" + (" · ACTIVE" if active else "")
+        title = f"{'●' if active else '○'} {label} · {plan}" + (" · SELECTED" if active else "")
         if color:
             title = f"\033[1m{title}\033[0m"
         lines += ["", title]
