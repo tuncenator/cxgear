@@ -88,7 +88,11 @@ class NativeTest(unittest.TestCase):
                     item = {'type': 'function_call', 'call_id': 'pause-1', 'name': 'cxgear_pause', 'arguments': '{}'}
                     owner.mode = 'message'
                 else:
-                    item = {'type': 'message', 'id': f'msg-{i}', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': f'Answer {i} from {account}'}]}
+                    answer = f'Answer {i} from {account}'
+                    if owner.mode == 'large':
+                        answer += '\nLARGE-HISTORY-MARKER' + ' ' * (2 * 1024 * 1024) + 'END'
+                        owner.mode = 'message'
+                    item = {'type': 'message', 'id': f'msg-{i}', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': answer}]}
                 events = [{'type': 'response.created', 'response': {'id': f'resp-{i}'}}, {'type': 'response.output_item.done', 'item': item}, {'type': 'response.completed', 'response': {'id': f'resp-{i}', 'usage': {'input_tokens': 10, 'output_tokens': 5, 'total_tokens': 15}}}]
                 body = ''.join('event: '+e['type']+'\ndata: '+json.dumps(e)+'\n\n' for e in events).encode()
                 self.reply(200, body, 'text/event-stream')
@@ -198,6 +202,24 @@ stream_max_retries = 0
         self.assertEqual(self.requests[-1]['account'], 'b')
         events = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual(events[-1]['usage']['input_tokens'], 20)
+
+    def test_large_output_then_resume_and_fork(self):
+        self.mode = 'large'
+        command = [sys.executable, '-m', 'cxgear', 'codex', 'exec', '--skip-git-repo-check', '--json', '-C', str(self.work)]
+        result = subprocess.run(command+['Remember LARGE-HISTORY-REQUEST.'], input='', text=True, capture_output=True, timeout=45)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual(events[-1]['type'], 'turn.completed')
+        self.assertGreater(len(result.stdout), 2 * 1024 * 1024)
+        thread = events[0]['thread_id']
+        for mode in ('resume', 'fork'):
+            result = subprocess.run(command+[mode, thread, 'Recall the history.'], input='', text=True, capture_output=True, timeout=45)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            events = [json.loads(line) for line in result.stdout.splitlines()]
+            self.assertEqual(events[-1]['type'], 'turn.completed')
+            self.assertIn('LARGE-HISTORY-REQUEST', json.dumps(self.requests[-1]['input']))
+            self.assertIn('LARGE-HISTORY-MARKER', json.dumps(self.requests[-1]['input']))
+            self.assertNotIn('LARGE-HISTORY-MARKER', result.stdout)
 
     def test_schema_and_failure_exit(self):
         schema = self.path/'schema.json'

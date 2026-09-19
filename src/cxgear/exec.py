@@ -127,6 +127,9 @@ def run(options):
             start["ephemeral"] = options.ephemeral
         else:
             start["threadId"] = resolve_thread(client, options, cwd)
+            # Exec consumes only the new turn. Keep history in the server,
+            # matching native exec, instead of downloading old tool output.
+            start["excludeTurns"] = True
         response = client.call("thread/" + options.mode, start)
         thread = response["thread"]["id"]
         output.emit("thread.started", thread_id=thread)

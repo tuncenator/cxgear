@@ -110,5 +110,7 @@ def stdio(binary, home, overrides=(), cwd=None):
 
 def websocket(url):
     from websockets.sync.client import connect, unix_connect
-    ws = unix_connect(path=url[7:], proxy=None, compression=None) if url.startswith("unix://") else connect(url, proxy=None, compression=None)
+    # Native history and tool output can exceed websockets' 1 MiB default.
+    # This is a private local Codex transport; do not truncate protocol frames.
+    ws = unix_connect(path=url[7:], proxy=None, compression=None, max_size=None) if url.startswith("unix://") else connect(url, proxy=None, compression=None, max_size=None)
     return RPC(iter(ws), ws.send, ws.close)
