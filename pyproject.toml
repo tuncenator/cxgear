@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cxgear"
+version = "0.1.0"
+description = "Independent ChatGPT account rotation for Codex CLI"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "tuncenator"}]
+dependencies = ["websockets>=15,<17"]
+
+[project.scripts]
+cxgear = "cxgear.cli:main"
+cxgear-codex = "cxgear.launcher:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
