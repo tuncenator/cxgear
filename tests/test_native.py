@@ -116,6 +116,9 @@ stream_max_retries = 0
         self.env.start()
         for key in ('OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'CXGEAR_BYPASS'):
             os.environ.pop(key, None)
+        # Regression: a globally exported API key must not disable subscription
+        # rotation, including the real interactive launcher and exec adapter.
+        os.environ['OPENAI_API_KEY'] = 'fixture-unrelated-api-key'
         for name in ('a', 'b'):
             home = store.private_dir(store.account_home(name))
             (home/'config.toml').write_text(config)

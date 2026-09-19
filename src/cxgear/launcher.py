@@ -1,5 +1,6 @@
 """The codex-compatible entry point. Non-model commands use the native executable."""
 import os
+from pathlib import Path
 import signal
 import subprocess
 import sys
@@ -31,14 +32,32 @@ def command(args):
 
 
 def native(args):
-    env = dict(os.environ, CXGEAR_BYPASS="1")
+    # The executable is already the upstream absolute path. Adding a bypass
+    # flag here would incorrectly disable rotation for later child launches.
+    env = dict(os.environ)
     os.execve(accounts.binary(), [accounts.binary(), *args], env)
+
+
+def native_auth_requested():
+    # OPENAI_API_KEY alone does not override native Codex's saved ChatGPT
+    # login. It is commonly exported for unrelated tools in the same shell.
+    if any(os.environ.get(k, "").strip() for k in ("CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_IDENTITY_TOKEN_FILE")):
+        return True
+    home = Path(os.environ.get("CODEX_HOME", Path.home()/".codex"))
+    try:
+        auth = store.read(home/"auth.json")
+    except (ValueError, OSError):
+        return True  # Let upstream handle an unreadable login.
+    mode = auth.get("auth_mode")
+    if mode:
+        return mode not in ("chatgpt", "chatgptAuthTokens")
+    return bool(auth.get("OPENAI_API_KEY"))
 
 
 def launch(args):
     cmd, index = command(args)
     cfg = store.config()
-    if os.environ.get("CXGEAR_BYPASS") == "1" or not cfg.get("accounts") or any(x.split("=", 1)[0] in ("--help", "-h", "--version", "-V", "--oss", "--remote") for x in args) or any(os.environ.get(k) for k in ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_IDENTITY_TOKEN_FILE")):
+    if os.environ.get("CXGEAR_BYPASS") == "1" or not cfg.get("accounts") or any(x.split("=", 1)[0] in ("--help", "-h", "--version", "-V", "--oss", "--remote") for x in args) or native_auth_requested():
         native(args)
     if cmd in ("exec", "e"):
         try:

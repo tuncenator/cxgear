@@ -120,16 +120,24 @@ both the short window and weekly window when present:
   Never display unknown allowance as a fresh 0% reading.
 * A manual pin takes precedence, even if that account is capped.
 
-Relative capacity defaults to 1 for every account. Set weights if you know the
-relative Codex allowance of your plans:
+Relative capacity defaults to 1 for every account. Set weights to reflect your
+plans. For a work account on Pro 20x and a personal account on Pro 5x:
 
 ```sh
+cxgear configure work --capacity 20
 cxgear configure personal --capacity 5
-cxgear configure work --capacity 1
 ```
 
-These are relative weights, not token counts. cxgear does not infer the ratio
-between a personal subscription and a workspace seat from their prices.
+OpenAI lists both multipliers against the same Plus baseline in its
+[Codex pricing](https://learn.chatgpt.com/docs/pricing), giving these tiers a
+4:1 capacity ratio. The selection score multiplies remaining percentage by
+capacity before dividing by hours to reset. For example, 41% of a 20x allowance
+represents more estimated capacity than 100% of a 5x allowance.
+
+These are relative plan weights, not guaranteed token counts or independently
+measured weekly caps. Live quota percentages and resets still govern selection.
+cxgear does not infer a personal/workspace allowance ratio from account names
+or subscription prices.
 
 Paid extra usage is never a preferred fallback unless you opt it in:
 
@@ -182,6 +190,10 @@ branches or dependencies.
   notice and **without rotation**. Login, logout, update, app-server, and other
   administrative commands also remain native. API-key and local-model runs,
   explicit remote endpoints, and unconfigured installations pass through.
+  An unrelated `OPENAI_API_KEY` exported in your shell does not disable ChatGPT
+  rotation. Explicit Codex credential variables (`CODEX_API_KEY`,
+  `CODEX_ACCESS_TOKEN`, `OPENAI_IDENTITY_TOKEN_FILE`) and saved non-ChatGPT logins
+  retain native handling.
 * **Failures:** quota polling reduces the chance of hitting a cap, but can't
   eliminate races with usage elsewhere. A failed turn is reported faithfully;
   cxgear does not automatically replay it. Resume it after selecting an account.
