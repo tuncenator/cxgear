@@ -11,23 +11,7 @@ from . import __version__, accounts, broker, install, store
 from .policy import choose
 
 
-def describe(snapshot):
-    lines = ["cxgear · " + ("pinned to " + snapshot["pinned"] if snapshot.get("pinned") else "automatic")]
-    for name, usage in snapshot.get("accounts", {}).items():
-        parts = []
-        for w in usage.get("windows", []):
-            label = "weekly" if w["minutes"] == 10080 else f"{w['minutes']/60:g}h"
-            hours = max(0, (w["reset"]-time.time())/3600)
-            parts.append(f"{label} {w['used']:.0f}% · resets in {hours:.1f}h")
-        if not parts:
-            parts = ["usage unavailable"]
-        if usage.get("error"):
-            parts.append(usage["error"])
-        elif time.time()-usage.get("at", 0) > 180:
-            parts.append("stale")
-        lines.append(("● " if snapshot.get("active") == name else "  ") + name + "  " + " | ".join(parts))
-    lines.append(snapshot.get("reason", "Add an account to get started"))
-    return "\n".join(lines)
+from .status import describe, enrich
 
 
 def main():
@@ -55,6 +39,7 @@ def main():
     cap = sub.add_parser("configure", help="Set relative account capacity and explicit extra-usage preference")
     cap.add_argument("account")
     cap.add_argument("--capacity", type=float)
+    cap.add_argument("--label", help="Display name; the account alias stays valid")
     cap.add_argument("--extra-usage", choices=["on", "off"])
     sub.add_parser("stop", help="Stop quota polling; already-running sessions keep their current login")
     sub.add_parser("doctor", help="Check the installed Codex and launcher paths")
@@ -85,6 +70,11 @@ def main():
                 account = cfg.get("accounts", {}).get(args.account)
                 if account is None:
                     raise ValueError("Unknown account")
+                if args.label is not None:
+                    label = args.label.strip()
+                    if not label or len(label) > 60 or not label.isprintable():
+                        raise ValueError("Display name must be 1–60 printable characters")
+                    account["label"] = label
                 if args.capacity is not None:
                     if not math.isfinite(args.capacity) or args.capacity <= 0:
                         raise ValueError("Capacity must be a positive number")
@@ -100,6 +90,7 @@ def main():
             broker.ensure()
             while True:
                 result = broker.request("refresh" if args.command == "refresh" else "status")
+                result = enrich(result)
                 if args.command == "dryrun":
                     d = choose(store.config().get("accounts", {}), result["accounts"], result.get("active"), result.get("pinned"), time.time(), result.get("last_switch", 0))
                     result = {"account": d.account, "reason": d.reason}
@@ -112,7 +103,7 @@ def main():
                 else:
                     if args.command == "watch" and sys.stdout.isatty():
                         print("\033[2J\033[H", end="")
-                    print(describe(result), flush=True)
+                    print(describe(result, color=sys.stdout.isatty() and "NO_COLOR" not in os.environ), flush=True)
                 if args.command != "watch":
                     break
                 time.sleep(max(1, args.interval))

@@ -62,6 +62,21 @@ No project configuration, hooks, or framework integration is required.
 
 ## Controls
 
+`status` and `watch` show account labels and reported plans, quota bars, remaining
+allowance, reset times, a weekly pace guide, and whether the launcher is enabled.
+Missing short windows are marked as not reported; stale readings never imply
+current headroom. Colors follow your terminal and respect `NO_COLOR`.
+
+Account names such as `existing` are aliases you choose, not subscription types.
+Set a display label without changing login storage or existing commands:
+
+```sh
+cxgear configure existing --label Work
+```
+
+The heading becomes `Work (existing) · Pro` if Codex reports the Pro plan.
+`status --json` includes labels and plans, but never login tokens.
+
 | Command | Purpose |
 | --- | --- |
 | `cxgear status` / `status --json` | Accounts, usage, resets, and current decision |
