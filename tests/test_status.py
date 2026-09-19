@@ -6,10 +6,20 @@ import unittest
 from unittest.mock import patch
 
 from cxgear import store
-from cxgear.status import describe, enrich
+from cxgear.status import bar, describe, enrich
 
 
 class StatusTest(unittest.TestCase):
+    def test_pace_distinguishes_unspent_allowance_from_excess_usage(self):
+        below = bar(20, pace=50, width=10)
+        above = bar(70, pace=50, width=10)
+        self.assertEqual(below, '██▒▒▒░░░░░')
+        self.assertEqual(above, '█████▓▓░░░')
+        for used, pace in ((0, 0), (100, 100), (20, 21), (21, 20), (101, -1)):
+            self.assertEqual(len(bar(used, pace=pace, width=24)), 24)
+        self.assertIn('\033[38;2;255;79;163m', bar(70, pace=50, color=True))
+        self.assertIn('\033[38;2;117;80;123m', bar(20, pace=50, color=True))
+
     def snapshot(self):
         return {'active': 'work', 'accounts': {'work': {'at': 1000, 'plan': 'pro', 'label': 'Work', 'windows': [{'minutes': 10080, 'used': 59, 'reset': 605800}]}}}
 

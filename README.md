@@ -67,6 +67,12 @@ allowance, reset times, a weekly pace guide, and whether the launcher is enabled
 Missing short windows are marked as not reported; stale readings never imply
 current headroom. Colors follow your terminal and respect `NO_COLOR`.
 
+Weekly bars use ccgear's GPT palette: muted magenta `█` for usage within pace,
+dark purple `▒` for an unused below-pace gap, bright pink `▓` for usage above
+pace, and gray `░` for the remaining allowance beyond both usage and pace.
+Each account uses its own reset time against a linear seven-day pace guide.
+The textures remain distinct in plain output, and status includes a legend.
+
 Account names such as `existing` are aliases you choose, not subscription types.
 Set a display label without changing login storage or existing commands:
 
