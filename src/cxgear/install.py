@@ -141,7 +141,14 @@ def install(directory=None):
                             + 'case "$PATH" in\n  ' + quoted_bin + ':*) ;;\n  *) export PATH='
                             + quoted_bin + ':"$PATH" ;;\nesac\n')
         env_path.chmod(0o600)
-        block = _START + "\n. " + shlex.quote(str(env_path)) + "\n" + _END + "\n"
+        # Startup files may be synced to hosts without cxgear; skip quietly there.
+        # $HOME-relative so the block is identical on every host sharing the file
+        try:
+            quoted_env = '"$HOME"/' + shlex.quote(str(env_path.relative_to(Path.home())))
+        except ValueError:
+            quoted_env = shlex.quote(str(env_path))
+        block = (_START + "\nif [ -r " + quoted_env + " ]; then . " + quoted_env + "; fi\n"
+                 + _END + "\n")
         previous = {entry["path"]: entry for entry in meta.get("shell_files", [])}
         shell_files = []
         for path in _shell_paths():

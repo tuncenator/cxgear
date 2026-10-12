@@ -55,7 +55,9 @@ codex
 ```
 
 `cxgear install` adds a private launcher at `~/.local/share/cxgear/bin/codex`
-and a marked PATH block to Bash and Zsh startup files. It leaves native Codex's
+and a marked PATH block to Bash and Zsh startup files. The block names its file
+relative to `$HOME` and is skipped where cxgear is not installed, so startup files
+synced between hosts stay correct on each. It leaves native Codex's
 `~/.local/bin/codex` under the native installer's control, so updates cannot
 replace cxgear's launcher. The upstream updater-managed executable is used
 directly. Existing installations are migrated and their original native launcher
