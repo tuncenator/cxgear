@@ -82,8 +82,21 @@ _START = "# >>> cxgear >>>"
 _END = "# <<< cxgear <<<"
 
 
+_BLOCK = re.compile(r"(?m)^" + re.escape(_START) + r"\n[\s\S]*?^" + re.escape(_END) + r"\n?")
+
+
 def _without_block(text):
-    return re.sub(r"(?m)^" + re.escape(_START) + r"\n[\s\S]*?^" + re.escape(_END) + r"\n?", "", text)
+    return _BLOCK.sub("", text)
+
+
+def _with_block(text, block):
+    # Replace an existing block where it stands, since later lines may rely on
+    # its order; otherwise append.
+    match = _BLOCK.search(text)
+    if match:
+        return text[:match.start()] + block + _without_block(text[match.end():])
+    separator = "" if not text or text.endswith("\n") else "\n"
+    return text + separator + block
 
 
 def _shell_paths():
@@ -154,10 +167,8 @@ def install(directory=None):
         for path in _shell_paths():
             exists = path.exists()
             old = path.read_text() if exists else ""
-            clean = _without_block(old)
-            separator = "" if not clean or clean.endswith("\n") else "\n"
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(clean + separator + block)
+            path.write_text(_with_block(old, block))
             shell_files.append(previous.get(str(path), {"path": str(path), "created": not exists}))
         cfg = store.config()
         cfg["codex_binary"] = str(source)
