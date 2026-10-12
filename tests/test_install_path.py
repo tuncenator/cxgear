@@ -48,6 +48,7 @@ class DurableInstallTest(unittest.TestCase):
                 [shell_bin, '--noprofile', '--rcfile', str(self.home/'.bashrc'), '-ic', 'command -v codex; codex'])
         run = subprocess.run(args, env=env, text=True, capture_output=True, timeout=10)
         self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertNotIn('env.sh', run.stderr)
         return run.stdout.strip().splitlines()
 
     def test_native_update_cannot_replace_private_launcher(self):
@@ -72,6 +73,21 @@ class DurableInstallTest(unittest.TestCase):
         self.assertEqual((self.home/'.bash_profile').read_text(), '# existing login config\n')
         self.assertFalse((self.home/'.zprofile').exists())
         self.assertFalse(launcher.exists())
+
+    def test_shell_block_is_home_relative(self):
+        # A startup file synced between hosts with different home paths gets one block.
+        with patch.dict(os.environ, {'CXGEAR_HOME': str(self.home/'.local/share/cxgear')}):
+            install.install()
+            text = (self.home/'.zshrc').read_text()
+        self.assertIn('"$HOME"/.local/share/cxgear/env.sh', text)
+        self.assertNotIn(str(self.home)+'/.local/share/cxgear/env.sh', text)
+
+    def test_shell_startup_ignores_missing_state(self):
+        # Startup files may be synced to hosts where cxgear is not installed.
+        install.install()
+        shutil.rmtree(store.root())
+        for shell in (name for name in ('zsh','bash') if shutil.which(name)):
+            self.assertEqual(self.shell_selection(shell), [str(self.target), 'native-old'])
 
     def test_migration_restores_native_command_and_preserves_backup(self):
         install.install(self.bin)
