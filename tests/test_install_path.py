@@ -82,6 +82,13 @@ class DurableInstallTest(unittest.TestCase):
         self.assertIn('"$HOME"/.local/share/cxgear/env.sh', text)
         self.assertNotIn(str(self.home)+'/.local/share/cxgear/env.sh', text)
 
+    def test_existing_block_stays_in_place(self):
+        (self.home/'.zshrc').write_text('a\n# >>> cxgear >>>\n. /old/env.sh\n# <<< cxgear <<<\nb\n')
+        install.install()
+        lines = (self.home/'.zshrc').read_text().splitlines()
+        self.assertEqual((lines[0], lines[1], lines[-1]), ('a', '# >>> cxgear >>>', 'b'))
+        self.assertNotIn('/old/env.sh', '\n'.join(lines))
+
     def test_shell_startup_ignores_missing_state(self):
         # Startup files may be synced to hosts where cxgear is not installed.
         install.install()
